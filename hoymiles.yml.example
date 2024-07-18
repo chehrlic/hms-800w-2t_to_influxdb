@@ -1,0 +1,24 @@
+hoymiles:
+  host: 10.10.100.254
+  interval: 5
+
+  logging:
+    filename: 'hoymiles.log'
+    # DEBUG, INFO, WARNING, ERROR, FATAL
+    level: 'INFO'
+    max_log_filesize: 1000000
+    max_log_files: 1
+
+  sunset:
+    disabled: false
+    latitude: 51.1
+    longitude: 10.1
+    altitude: 1142
+
+  influx:
+    url: 'http://<influx_instance>:8086'
+    org: '<org>'
+    token: '<access_token>'
+    bucket: '<bucket>'
+    measurement: '<hoymiles>'
+
