@@ -3,7 +3,7 @@
 
 import argparse
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
 from hoymiles_wifi.dtu import DTU
@@ -15,6 +15,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from suntimes import SunTimes
+import time
 from time import sleep
 import yaml
 from yaml.loader import SafeLoader
