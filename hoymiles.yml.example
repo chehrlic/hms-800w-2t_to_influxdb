@@ -1,6 +1,6 @@
 hoymiles:
   host: 10.10.100.254
-  interval: 5
+  interval: 32
 
   logging:
     filename: 'hoymiles.log'

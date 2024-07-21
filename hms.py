@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
-from hoymiles_wifi.dtu import DTU
+from hoymiles_wifi.dtu import DTU, NetworkState
 from hoymiles_wifi.protobuf import (
     RealDataNew_pb2,
 )
@@ -84,7 +84,10 @@ async def async_get_real_data_new(
 ) -> RealDataNew_pb2.RealDataNewResDTO | None:
     '''Get real data from the inverter asynchronously.'''
 
-    return await dtu.async_get_real_data_new()
+    async with asyncio.timeout(10):
+        return await dtu.async_get_real_data_new()
+    raise TimeoutError
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description='Hoymiles DTU Monitoring')
@@ -142,34 +145,50 @@ async def main() -> None:
                 # InfluxDB requires nanoseconds
                 ctime = int(utctime.timestamp() * 1e9)
 
+                atLeastOneAdded = False
                 # AC Data
                 phase_id = 0
                 for phase in data['sgsData']:
-                    data_stack.append(f'{measurement},phase={phase_id},type=voltage value={phase["voltage"]/10} {ctime}')
-                    data_stack.append(f'{measurement},phase={phase_id},type=current value={phase["current"]/10} {ctime}')
-                    data_stack.append(f'{measurement},phase={phase_id},type=power value={phase["activePower"]/10} {ctime}')
-                    data_stack.append(f'{measurement},phase={phase_id},type=frequency value={phase["frequency"]/100:.3f} {ctime}')
-                    data_stack.append(f'{measurement},phase={phase_id},type=temperature value={phase["temperature"]/10} {ctime}')
-                    phase_id = phase_id + 1
+                    try:
+                        data_stack += [f'{measurement},phase={phase_id},type=voltage value={phase["voltage"]/10} {ctime}',
+                                       f'{measurement},phase={phase_id},type=current value={phase["current"]/10} {ctime}',
+                                       f'{measurement},phase={phase_id},type=power value={phase["activePower"]/10} {ctime}',
+                                       f'{measurement},phase={phase_id},type=frequency value={phase["frequency"]/100:.3f} {ctime}',
+                                       f'{measurement},phase={phase_id},type=temperature value={phase["temperature"]/10} {ctime}',
+                                      ]
+                        phase_id = phase_id + 1
+                        atLeastOneAdded = True
+                    except:
+                        pass
 
                 # DC Data
                 for string in data['pvData']:
-                    if not 'power' in string: continue
-                    string_id = string['portNumber']
-                    data_stack.append(f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}')
-                    data_stack.append(f'{measurement},string={string_id},type=current value={string["current"]/10:3f} {ctime}')
-                    data_stack.append(f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}')
-                    data_stack.append(f'{measurement},string={string_id},type=YieldDay value={string["energyDaily"]:.2f} {ctime}')
-                    data_stack.append(f'{measurement},string={string_id},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}')
-                logging.debug(f'data to influx: {data_stack}')
-                infuxconn.write(influxbucket, influxorg, data_stack)
+                    try:
+                        string_id = string['portNumber']
+                        data_stack += [f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}',
+                                       f'{measurement},string={string_id},type=current value={string["current"]/10:3f} {ctime}',
+                                       f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}',
+                                       f'{measurement},string={string_id},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
+                                       f'{measurement},string={string_id},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
+                                      ]
+                        atLeastOneAdded = True
+                    except:
+                        pass
+                if atLeastOneAdded:
+                    logging.debug(f'data to influx: {data_stack}')
+                    infuxconn.write(influxbucket, influxorg, data_stack)
             elif response:
                 logging.warning (f'Unhandled message {response}')
         except json.JSONDecodeError as e:
             logging.error (f'Json decode exception: {e}')
+        except ValueError as e:
+            logging.error (f'Json exception: {e}')
+        except TimeoutError as e:
+            logging.error (f'Timeout while trying to retrieve data from DTU.')
         except Exception as e:
             logging.error (f'Runtime exception: {e}')
-        sleep(interval)
+        if dtu.get_state() == NetworkState.Online:
+            sleep(interval)
 
 def run_main() -> None:
     '''Run the main function for the hoymiles_wifi package.'''
