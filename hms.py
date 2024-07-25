@@ -164,7 +164,7 @@ async def main() -> None:
                 # DC Data
                 for string in data['pvData']:
                     try:
-                        string_id = string['portNumber']
+                        string_id = int(string['portNumber']) - 1
                         data_stack += [f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}',
                                        f'{measurement},string={string_id},type=current value={string["current"]/10:3f} {ctime}',
                                        f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}',
