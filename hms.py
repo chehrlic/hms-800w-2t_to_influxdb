@@ -151,7 +151,7 @@ async def main() -> None:
                 for phase in data['sgsData']:
                     try:
                         data_stack += [f'{measurement},phase={phase_id},type=voltage value={phase["voltage"]/10} {ctime}',
-                                       f'{measurement},phase={phase_id},type=current value={phase["current"]/10} {ctime}',
+                                       f'{measurement},phase={phase_id},type=current value={phase["current"]/100} {ctime}',
                                        f'{measurement},phase={phase_id},type=power value={phase["activePower"]/10} {ctime}',
                                        f'{measurement},phase={phase_id},type=frequency value={phase["frequency"]/100:.3f} {ctime}',
                                        f'{measurement},phase={phase_id},type=temperature value={phase["temperature"]/10} {ctime}',
@@ -166,7 +166,7 @@ async def main() -> None:
                     try:
                         string_id = int(string['portNumber']) - 1
                         data_stack += [f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}',
-                                       f'{measurement},string={string_id},type=current value={string["current"]/10:3f} {ctime}',
+                                       f'{measurement},string={string_id},type=current value={string["current"]/100:3f} {ctime}',
                                        f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}',
                                        f'{measurement},string={string_id},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
                                        f'{measurement},string={string_id},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
