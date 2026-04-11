@@ -53,12 +53,9 @@ class SunsetHandler:
 
 def init_logging(hoymiles_config):
     log_config = hoymiles_config.get('logging')
-    fn = 'hoymiles.log'
+
     lvl = logging.ERROR
-    max_log_filesize = 1000000
-    max_log_files = 1
     if log_config:
-        fn = log_config.get('filename', fn)
         level = log_config.get('level', 'ERROR')
         if level == 'DEBUG':
             lvl = logging.DEBUG
@@ -70,11 +67,9 @@ def init_logging(hoymiles_config):
             lvl = logging.ERROR
         elif level == 'FATAL':
             lvl = logging.FATAL
-        max_log_filesize  = log_config.get('max_log_filesize', max_log_filesize)
-        max_log_files = log_config.get('max_log_files', max_log_files)
 
-    logging.basicConfig(handlers=[RotatingFileHandler(fn, maxBytes=max_log_filesize, backupCount=max_log_files)], 
-        format='%(asctime)s %(levelname)s: %(message)s', 
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S.%s', level=lvl, force=True)
     logging.info(f'start logging with level: {logging.getLevelName(logging.root.level)}')
 
