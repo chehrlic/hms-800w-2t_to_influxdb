@@ -90,13 +90,13 @@ async def main() -> None:
         '--config', type=str, help='YAML config file, defaults to hoymiles.yml', default='hoymiles.yml'
     )
     args = parser.parse_args()
-    
+
     try:
         with open(args.config, 'r') as fh_yaml:
             cfg = yaml.load(fh_yaml, Loader=SafeLoader)
         hoymilescfg = cfg.get('hoymiles', {})
         init_logging(hoymilescfg)
-        
+
         sunset = SunsetHandler(hoymilescfg.get('sunset'))
 
         interval = hoymilescfg.get('interval', 5)
@@ -193,4 +193,3 @@ def run_main() -> None:
 
 if __name__ == '__main__':
     run_main()
-
