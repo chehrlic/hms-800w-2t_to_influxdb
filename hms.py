@@ -183,7 +183,7 @@ async def main() -> None:
         except Exception as e:
             logging.error (f'Runtime exception: {e}')
         if dtu.get_state() == NetworkState.Online:
-            sleep(interval)
+            await asyncio.sleep(interval)
 
 def run_main() -> None:
     '''Run the main function for the hoymiles_wifi package.'''
