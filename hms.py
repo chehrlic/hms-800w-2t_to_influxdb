@@ -159,12 +159,12 @@ async def main() -> None:
                 # DC Data
                 for string in data['pvData']:
                     try:
-                        string_id = int(string['portNumber']) - 1
-                        data_stack += [f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}',
-                                       f'{measurement},string={string_id},type=current value={string["current"]/100:3f} {ctime}',
-                                       f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}',
-                                       f'{measurement},string={string_id},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
-                                       f'{measurement},string={string_id},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
+                        port_number = int(string['portNumber']) - 1
+                        data_stack += [f'{measurement},port={port_number},type=voltage value={string["voltage"]/10:.3f} {ctime}',
+                                       f'{measurement},port={port_number},type=current value={string["current"]/100:3f} {ctime}',
+                                       f'{measurement},port={port_number},type=power value={string["power"]/10:.2f} {ctime}',
+                                       f'{measurement},port={port_number},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
+                                       f'{measurement},port={port_number},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
                                       ]
                         atLeastOneAdded = True
                     except:
