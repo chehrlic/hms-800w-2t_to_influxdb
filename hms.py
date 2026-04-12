@@ -18,8 +18,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from suntimes import SunTimes
-import time
-from time import sleep
 import yaml
 from yaml.loader import SafeLoader
 
@@ -64,7 +62,7 @@ class SunsetHandler:
         else:
             logging.info('Sunset disabled.')
 
-    def checkWaitForSunrise(self):
+    async def checkWaitForSunrise(self):
         if not self.suntimes:
             return
         # if the sunset already happened for today
@@ -79,7 +77,7 @@ class SunsetHandler:
             time_to_sleep = int((nextSunrise - datetime.now(timezone.utc)).total_seconds())
             logging.info (f'Next sunrise is at {nextSunrise} UTC, next sunset is at {self.nextSunset} UTC, sleeping for {time_to_sleep} seconds.')
             if time_to_sleep > 0:
-                time.sleep(time_to_sleep)
+                await asyncio.sleep(time_to_sleep)
                 logging.info (f'Woke up...')
 
 def init_logging(hoymiles_config):
@@ -176,7 +174,7 @@ async def main() -> None:
 
     while True:
         try:
-            sunset.checkWaitForSunrise()
+            await sunset.checkWaitForSunrise()
             response = await async_get_real_data_new(dtu)
             if response and isinstance(response, Message):
                 data = json.loads(MessageToJson(response))
