@@ -1,0 +1,37 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    ':disableDigestUpdates',
+    ':disableRateLimiting',
+    ':enableVulnerabilityAlerts',
+    ':rebaseStalePrs',
+    ':semanticCommitsDisabled',
+  ],
+  labels: [
+    'dependencies',
+  ],
+  packageRules: [
+    {
+      description: 'Group Docker-related GitHub Actions',
+      groupName: 'Docker Actions',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchPackageNames: [
+        'docker/*',
+      ],
+    },
+    {
+      description: 'Docker Hub library images (without a slash) often miss layers if pulled immediately after release, delay PR creation',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '!*/**',
+      ],
+      minimumReleaseAge: '2 days',
+      internalChecksFilter: 'strict',
+    },
+  ],
+}
