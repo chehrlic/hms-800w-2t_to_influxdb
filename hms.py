@@ -45,6 +45,12 @@ DEFAULT_CONFIG = {
 }
 
 
+def ensure_utc(value):
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 class SunsetHandler:
     def __init__(self, sunset_config):
         self.suntimes = None
@@ -53,7 +59,7 @@ class SunsetHandler:
             longitude = sunset_config.get('longitude')
             altitude = sunset_config.get('altitude')
             self.suntimes = SunTimes(longitude=longitude, latitude=latitude, altitude=altitude)
-            self.nextSunset = self.suntimes.setutc(datetime.utcnow())
+            self.nextSunset = ensure_utc(self.suntimes.setutc(datetime.now(timezone.utc)))
             logging.info(f'Todays sunset is at {self.nextSunset} UTC')
         else:
             logging.info('Sunset disabled.')
@@ -62,15 +68,15 @@ class SunsetHandler:
         if not self.suntimes:
             return
         # if the sunset already happened for today
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self.nextSunset < now:
             # wait until the sun rises again. if it's already after midnight, this will be today
-            nextSunrise = self.suntimes.riseutc(now)
+            nextSunrise = ensure_utc(self.suntimes.riseutc(now))
             if nextSunrise < now:
                 tomorrow = now + timedelta(days=1)
-                nextSunrise = self.suntimes.riseutc(tomorrow)
-            self.nextSunset = self.suntimes.setutc(nextSunrise)
-            time_to_sleep = int((nextSunrise - datetime.utcnow()).total_seconds())
+                nextSunrise = ensure_utc(self.suntimes.riseutc(tomorrow))
+            self.nextSunset = ensure_utc(self.suntimes.setutc(nextSunrise))
+            time_to_sleep = int((nextSunrise - datetime.now(timezone.utc)).total_seconds())
             logging.info (f'Next sunrise is at {nextSunrise} UTC, next sunset is at {self.nextSunset} UTC, sleeping for {time_to_sleep} seconds.')
             if time_to_sleep > 0:
                 time.sleep(time_to_sleep)
