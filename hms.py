@@ -14,6 +14,7 @@ from influxdb_client import InfluxDBClient
 import json
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 from suntimes import SunTimes
 import time
 from time import sleep
@@ -73,6 +74,17 @@ def init_logging(hoymiles_config):
         datefmt='%Y-%m-%d %H:%M:%S.%s', level=lvl, force=True)
     logging.info(f'start logging with level: {logging.getLevelName(logging.root.level)}')
 
+
+def apply_env_overrides(config, prefix=()):
+    for key, value in config.items():
+        env_key = '_'.join([*prefix, key]).upper()
+        if isinstance(value, dict):
+            apply_env_overrides(value, (*prefix, key))
+            continue
+        if env_key not in os.environ:
+            continue
+        config[key] = yaml.load(os.environ[env_key], Loader=SafeLoader)
+
 # Inverter commands
 async def async_get_real_data_new(
     dtu: DTU,
@@ -95,6 +107,7 @@ async def main() -> None:
         with open(args.config, 'r') as fh_yaml:
             cfg = yaml.load(fh_yaml, Loader=SafeLoader)
         hoymilescfg = cfg or {}
+        apply_env_overrides(hoymilescfg)
         init_logging(hoymilescfg)
 
         sunset = SunsetHandler(hoymilescfg.get('sunset'))
