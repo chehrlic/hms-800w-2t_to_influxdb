@@ -17,7 +17,9 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import signal
 from suntimes import SunTimes
+import sys
 import yaml
 from yaml.loader import SafeLoader
 
@@ -62,7 +64,7 @@ class SunsetHandler:
         else:
             logging.info('Sunset disabled.')
 
-    async def checkWaitForSunrise(self):
+    async def checkWaitForSunrise(self, shutdown_event=None):
         if not self.suntimes:
             return
         # if the sunset already happened for today
@@ -77,7 +79,13 @@ class SunsetHandler:
             time_to_sleep = int((nextSunrise - datetime.now(timezone.utc)).total_seconds())
             logging.info (f'Next sunrise is at {nextSunrise} UTC, next sunset is at {self.nextSunset} UTC, sleeping for {time_to_sleep} seconds.')
             if time_to_sleep > 0:
-                await asyncio.sleep(time_to_sleep)
+                if shutdown_event is None:
+                    await asyncio.sleep(time_to_sleep)
+                else:
+                    try:
+                        await asyncio.wait_for(shutdown_event.wait(), timeout=time_to_sleep)
+                    except asyncio.TimeoutError:
+                        pass
                 logging.info (f'Woke up...')
 
 def init_logging(hoymiles_config):
@@ -140,6 +148,19 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    influxclient = None
+    shutdown_event = asyncio.Event()
+
+    def request_shutdown(signame):
+        if shutdown_event.is_set():
+            return
+        logging.info(f'Received {signame}, shutting down.')
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, request_shutdown, sig.name)
+
     try:
         hoymilescfg = deepcopy(DEFAULT_CONFIG)
         try:
@@ -172,9 +193,11 @@ async def main() -> None:
         logging.fatal (f'Exception during setup from config file {args.config}: {e}')
         sys.exit(1)
 
-    while True:
+    while not shutdown_event.is_set():
         try:
-            await sunset.checkWaitForSunrise()
+            await sunset.checkWaitForSunrise(shutdown_event)
+            if shutdown_event.is_set():
+                break
             response = await async_get_real_data_new(dtu)
             if response and isinstance(response, Message):
                 data = json.loads(MessageToJson(response))
@@ -228,6 +251,10 @@ async def main() -> None:
                     infuxconn.write(influxbucket, influxorg, data_stack)
             elif response:
                 logging.warning (f'Unhandled message {response}')
+        except asyncio.CancelledError:
+            logging.info('Async task cancelled, shutting down.')
+            shutdown_event.set()
+            break
         except json.JSONDecodeError as e:
             logging.error (f'Json decode exception: {e}')
         except ValueError as e:
@@ -236,8 +263,16 @@ async def main() -> None:
             logging.error (f'Timeout while trying to retrieve data from DTU.')
         except Exception as e:
             logging.error (f'Runtime exception: {e}')
+        if shutdown_event.is_set():
+            break
         if dtu.get_state() == NetworkState.Online:
-            await asyncio.sleep(interval)
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    if influxclient is not None:
+        influxclient.close()
 
 def run_main() -> None:
     '''Run the main function for the hoymiles_wifi package.'''
