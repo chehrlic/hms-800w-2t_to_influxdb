@@ -4,7 +4,8 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=true
 
-RUN pip install hoymiles-wifi influxdb_client suntimes pyyaml
+COPY requirements.txt .
+RUN pip install --no-cache-dir --requirement requirements.txt
 COPY hms.py .
 
-CMD ["/app/hms.py"]
+CMD ["python", "/app/hms.py"]
