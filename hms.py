@@ -265,11 +265,10 @@ async def main() -> None:
             logging.error (f'Runtime exception: {e}')
         if shutdown_event.is_set():
             break
-        if dtu.get_state() == NetworkState.Online:
-            try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                pass
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
 
     if influxclient is not None:
         influxclient.close()
