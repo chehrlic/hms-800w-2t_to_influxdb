@@ -94,7 +94,7 @@ async def main() -> None:
     try:
         with open(args.config, 'r') as fh_yaml:
             cfg = yaml.load(fh_yaml, Loader=SafeLoader)
-        hoymilescfg = cfg.get('hoymiles', {})
+        hoymilescfg = cfg or {}
         init_logging(hoymilescfg)
 
         sunset = SunsetHandler(hoymilescfg.get('sunset'))
