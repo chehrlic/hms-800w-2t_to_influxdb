@@ -3,6 +3,7 @@
 
 import argparse
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
@@ -20,6 +21,28 @@ import time
 from time import sleep
 import yaml
 from yaml.loader import SafeLoader
+
+DEFAULT_CONFIG = {
+    'host': None,
+    'interval': 5,
+    'logging': {
+        'level': 'ERROR',
+    },
+    'sunset': {
+        'disabled': True,
+        'latitude': None,
+        'longitude': None,
+        'altitude': None,
+    },
+    'influx': {
+        'url': None,
+        'org': None,
+        'token': None,
+        'bucket': None,
+        'measurement': 'hoymiles',
+    },
+}
+
 
 class SunsetHandler:
     def __init__(self, sunset_config):
@@ -85,6 +108,15 @@ def apply_env_overrides(config, prefix=()):
             continue
         config[key] = yaml.load(os.environ[env_key], Loader=SafeLoader)
 
+
+def merge_config(base, overrides):
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge_config(base[key], value)
+            continue
+        base[key] = value
+    return base
+
 # Inverter commands
 async def async_get_real_data_new(
     dtu: DTU,
@@ -104,9 +136,13 @@ async def main() -> None:
     args = parser.parse_args()
 
     try:
-        with open(args.config, 'r') as fh_yaml:
-            cfg = yaml.load(fh_yaml, Loader=SafeLoader)
-        hoymilescfg = cfg or {}
+        hoymilescfg = deepcopy(DEFAULT_CONFIG)
+        try:
+            with open(args.config, 'r') as fh_yaml:
+                cfg = yaml.load(fh_yaml, Loader=SafeLoader)
+            merge_config(hoymilescfg, cfg or {})
+        except FileNotFoundError:
+            logging.info(f'Config file {args.config} not found, using environment variables and defaults.')
         apply_env_overrides(hoymilescfg)
         init_logging(hoymilescfg)
 

@@ -1,6 +1,7 @@
 # Every value can be overridden with an environment variable.
 # Use uppercase path segments joined with underscores, e.g.:
 # HOST, INTERVAL, LOGGING_LEVEL, SUNSET_DISABLED, INFLUX_URL
+# If all required values are provided through env vars, hoymiles.yml is optional.
 
 host: 10.10.100.254
 # Shorter intervals break the app.
