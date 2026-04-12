@@ -12,6 +12,7 @@ from hoymiles_wifi.protobuf import (
     RealDataNew_pb2,
 )
 from influxdb_client import InfluxDBClient
+from influxdb_client.client.write_api import SYNCHRONOUS
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -159,7 +160,7 @@ async def main() -> None:
         influxbucket = influxcfg.get('bucket')
         influxmeasurement = influxcfg.get('measurement', 'hoymiles')
         influxclient = InfluxDBClient(influxcfg.get('url'), influxcfg.get('token'), bucket=influxbucket)
-        infuxconn = influxclient.write_api()
+        infuxconn = influxclient.write_api(write_options=SYNCHRONOUS)
     except yaml.YAMLError as e:
         logging.error(f'Failed to load config file {args.config}: {e}')
         sys.exit(1)
