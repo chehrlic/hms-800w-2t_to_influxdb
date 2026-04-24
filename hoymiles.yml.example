@@ -1,24 +1,26 @@
-hoymiles:
-  host: 10.10.100.254
-  interval: 32
+# Every value can be overridden with an environment variable.
+# Use uppercase path segments joined with underscores, e.g.:
+# HOST, INTERVAL, LOGGING_LEVEL, SUNSET_DISABLED, INFLUX_URL
+# If all required values are provided through env vars, hoymiles.yml is optional.
 
-  logging:
-    filename: 'hoymiles.log'
-    # DEBUG, INFO, WARNING, ERROR, FATAL
-    level: 'INFO'
-    max_log_filesize: 1000000
-    max_log_files: 1
+host: 10.10.100.254
+# Shorter intervals break the app.
+# https://github.com/suaveolent/hoymiles-wifi/issues/90
+interval: 60
 
-  sunset:
-    disabled: false
-    latitude: 51.1
-    longitude: 10.1
-    altitude: 1142
+logging:
+  # DEBUG, INFO, WARNING, ERROR, FATAL
+  level: 'INFO'
 
-  influx:
-    url: 'http://<influx_instance>:8086'
-    org: '<org>'
-    token: '<access_token>'
-    bucket: '<bucket>'
-    measurement: '<hoymiles>'
+sunset:
+  disabled: false
+  latitude: 51.1
+  longitude: 10.1
+  altitude: 1142
 
+influx:
+  url: 'http://<influx_instance>:8086'
+  org: '<org>'
+  token: '<access_token>'
+  bucket: '<bucket>'
+  measurement: '<hoymiles>'

@@ -1,8 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import argparse
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
@@ -11,14 +12,44 @@ from hoymiles_wifi.protobuf import (
     RealDataNew_pb2,
 )
 from influxdb_client import InfluxDBClient
+from influxdb_client.client.write_api import SYNCHRONOUS
 import json
 import logging
 from logging.handlers import RotatingFileHandler
+import os
+import signal
 from suntimes import SunTimes
-import time
-from time import sleep
+import sys
 import yaml
 from yaml.loader import SafeLoader
+
+DEFAULT_CONFIG = {
+    'host': None,
+    'interval': 5,
+    'logging': {
+        'level': 'ERROR',
+    },
+    'sunset': {
+        'disabled': True,
+        'latitude': None,
+        'longitude': None,
+        'altitude': None,
+    },
+    'influx': {
+        'url': None,
+        'org': None,
+        'token': None,
+        'bucket': None,
+        'measurement': 'hoymiles',
+    },
+}
+
+
+def ensure_utc(value):
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
 
 class SunsetHandler:
     def __init__(self, sunset_config):
@@ -28,37 +59,40 @@ class SunsetHandler:
             longitude = sunset_config.get('longitude')
             altitude = sunset_config.get('altitude')
             self.suntimes = SunTimes(longitude=longitude, latitude=latitude, altitude=altitude)
-            self.nextSunset = self.suntimes.setutc(datetime.utcnow())
+            self.nextSunset = ensure_utc(self.suntimes.setutc(datetime.now(timezone.utc)))
             logging.info(f'Todays sunset is at {self.nextSunset} UTC')
         else:
             logging.info('Sunset disabled.')
 
-    def checkWaitForSunrise(self):
+    async def checkWaitForSunrise(self, shutdown_event=None):
         if not self.suntimes:
             return
         # if the sunset already happened for today
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self.nextSunset < now:
             # wait until the sun rises again. if it's already after midnight, this will be today
-            nextSunrise = self.suntimes.riseutc(now)
+            nextSunrise = ensure_utc(self.suntimes.riseutc(now))
             if nextSunrise < now:
                 tomorrow = now + timedelta(days=1)
-                nextSunrise = self.suntimes.riseutc(tomorrow)
-            self.nextSunset = self.suntimes.setutc(nextSunrise)
-            time_to_sleep = int((nextSunrise - datetime.utcnow()).total_seconds())
+                nextSunrise = ensure_utc(self.suntimes.riseutc(tomorrow))
+            self.nextSunset = ensure_utc(self.suntimes.setutc(nextSunrise))
+            time_to_sleep = int((nextSunrise - datetime.now(timezone.utc)).total_seconds())
             logging.info (f'Next sunrise is at {nextSunrise} UTC, next sunset is at {self.nextSunset} UTC, sleeping for {time_to_sleep} seconds.')
             if time_to_sleep > 0:
-                time.sleep(time_to_sleep)
+                if shutdown_event is None:
+                    await asyncio.sleep(time_to_sleep)
+                else:
+                    try:
+                        await asyncio.wait_for(shutdown_event.wait(), timeout=time_to_sleep)
+                    except asyncio.TimeoutError:
+                        pass
                 logging.info (f'Woke up...')
 
 def init_logging(hoymiles_config):
     log_config = hoymiles_config.get('logging')
-    fn = 'hoymiles.log'
+
     lvl = logging.ERROR
-    max_log_filesize = 1000000
-    max_log_files = 1
     if log_config:
-        fn = log_config.get('filename', fn)
         level = log_config.get('level', 'ERROR')
         if level == 'DEBUG':
             lvl = logging.DEBUG
@@ -70,13 +104,31 @@ def init_logging(hoymiles_config):
             lvl = logging.ERROR
         elif level == 'FATAL':
             lvl = logging.FATAL
-        max_log_filesize  = log_config.get('max_log_filesize', max_log_filesize)
-        max_log_files = log_config.get('max_log_files', max_log_files)
 
-    logging.basicConfig(handlers=[RotatingFileHandler(fn, maxBytes=max_log_filesize, backupCount=max_log_files)], 
-        format='%(asctime)s %(levelname)s: %(message)s', 
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S.%s', level=lvl, force=True)
     logging.info(f'start logging with level: {logging.getLevelName(logging.root.level)}')
+
+
+def apply_env_overrides(config, prefix=()):
+    for key, value in config.items():
+        env_key = '_'.join([*prefix, key]).upper()
+        if isinstance(value, dict):
+            apply_env_overrides(value, (*prefix, key))
+            continue
+        if env_key not in os.environ:
+            continue
+        config[key] = yaml.load(os.environ[env_key], Loader=SafeLoader)
+
+
+def merge_config(base, overrides):
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge_config(base[key], value)
+            continue
+        base[key] = value
+    return base
 
 # Inverter commands
 async def async_get_real_data_new(
@@ -95,13 +147,31 @@ async def main() -> None:
         '--config', type=str, help='YAML config file, defaults to hoymiles.yml', default='hoymiles.yml'
     )
     args = parser.parse_args()
-    
+
+    influxclient = None
+    shutdown_event = asyncio.Event()
+
+    def request_shutdown(signame):
+        if shutdown_event.is_set():
+            return
+        logging.info(f'Received {signame}, shutting down.')
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, request_shutdown, sig.name)
+
     try:
-        with open(args.config, 'r') as fh_yaml:
-            cfg = yaml.load(fh_yaml, Loader=SafeLoader)
-        hoymilescfg = cfg.get('hoymiles', {})
+        hoymilescfg = deepcopy(DEFAULT_CONFIG)
+        try:
+            with open(args.config, 'r') as fh_yaml:
+                cfg = yaml.load(fh_yaml, Loader=SafeLoader)
+            merge_config(hoymilescfg, cfg or {})
+        except FileNotFoundError:
+            logging.info(f'Config file {args.config} not found, using environment variables and defaults.')
+        apply_env_overrides(hoymilescfg)
         init_logging(hoymilescfg)
-        
+
         sunset = SunsetHandler(hoymilescfg.get('sunset'))
 
         interval = hoymilescfg.get('interval', 5)
@@ -115,7 +185,7 @@ async def main() -> None:
         influxbucket = influxcfg.get('bucket')
         influxmeasurement = influxcfg.get('measurement', 'hoymiles')
         influxclient = InfluxDBClient(influxcfg.get('url'), influxcfg.get('token'), bucket=influxbucket)
-        infuxconn = influxclient.write_api()
+        infuxconn = influxclient.write_api(write_options=SYNCHRONOUS)
     except yaml.YAMLError as e:
         logging.error(f'Failed to load config file {args.config}: {e}')
         sys.exit(1)
@@ -123,9 +193,11 @@ async def main() -> None:
         logging.fatal (f'Exception during setup from config file {args.config}: {e}')
         sys.exit(1)
 
-    while True:
+    while not shutdown_event.is_set():
         try:
-            sunset.checkWaitForSunrise()
+            await sunset.checkWaitForSunrise(shutdown_event)
+            if shutdown_event.is_set():
+                break
             response = await async_get_real_data_new(dtu)
             if response and isinstance(response, Message):
                 data = json.loads(MessageToJson(response))
@@ -164,12 +236,12 @@ async def main() -> None:
                 # DC Data
                 for string in data['pvData']:
                     try:
-                        string_id = int(string['portNumber']) - 1
-                        data_stack += [f'{measurement},string={string_id},type=voltage value={string["voltage"]/10:.3f} {ctime}',
-                                       f'{measurement},string={string_id},type=current value={string["current"]/100:3f} {ctime}',
-                                       f'{measurement},string={string_id},type=power value={string["power"]/10:.2f} {ctime}',
-                                       f'{measurement},string={string_id},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
-                                       f'{measurement},string={string_id},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
+                        port_number = int(string['portNumber']) - 1
+                        data_stack += [f'{measurement},port={port_number},type=voltage value={string["voltage"]/10:.3f} {ctime}',
+                                       f'{measurement},port={port_number},type=current value={string["current"]/100:3f} {ctime}',
+                                       f'{measurement},port={port_number},type=power value={string["power"]/10:.2f} {ctime}',
+                                       f'{measurement},port={port_number},type=YieldDay value={string["energyDaily"]:.2f} {ctime}',
+                                       f'{measurement},port={port_number},type=YieldTotal value={string["energyTotal"]:.4f} {ctime}'
                                       ]
                         atLeastOneAdded = True
                     except:
@@ -179,6 +251,10 @@ async def main() -> None:
                     infuxconn.write(influxbucket, influxorg, data_stack)
             elif response:
                 logging.warning (f'Unhandled message {response}')
+        except asyncio.CancelledError:
+            logging.info('Async task cancelled, shutting down.')
+            shutdown_event.set()
+            break
         except json.JSONDecodeError as e:
             logging.error (f'Json decode exception: {e}')
         except ValueError as e:
@@ -187,8 +263,15 @@ async def main() -> None:
             logging.error (f'Timeout while trying to retrieve data from DTU.')
         except Exception as e:
             logging.error (f'Runtime exception: {e}')
-        if dtu.get_state() == NetworkState.Online:
-            sleep(interval)
+        if shutdown_event.is_set():
+            break
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
+    if influxclient is not None:
+        influxclient.close()
 
 def run_main() -> None:
     '''Run the main function for the hoymiles_wifi package.'''
@@ -198,4 +281,3 @@ def run_main() -> None:
 
 if __name__ == '__main__':
     run_main()
-
